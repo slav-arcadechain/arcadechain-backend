@@ -2,15 +2,50 @@ const functions = require("firebase-functions");
 const admin = require('firebase-admin');
 const ethers = require('ethers');
 const cors = require('cors');
+const Moralis = require("moralis-v1/node");
 // const cors = require('cors')({
 //     origin: '*',
 // });
+
+/* Moralis init code */
+
 
 
 admin.initializeApp(functions.config().firebase);
 
 exports.helloWorld = functions.https.onRequest((req, res) => {
     res.send("Hello from Firebase!");
+});
+
+exports.getSlotGameCount = functions.https.onRequest(async (req, res) => {
+    const remoteConfigTemplate = await getConfigTemplate();
+    const serverUrl = remoteConfigTemplate.parameters.moralisServerUrl.defaultValue.value;
+    const appId = remoteConfigTemplate.parameters.moralisAppId.defaultValue.value;
+    const masterKey = remoteConfigTemplate.parameters.moralisMasterKey.defaultValue.value;
+    await Moralis.start({ serverUrl, appId, masterKey });
+    const prevMonday = new Date();
+    prevMonday.setDate(prevMonday.getDate() - (prevMonday.getDay() + 6) % 7);
+    prevMonday.setUTCHours(0,0,0,0)
+    const wallet = req.body.address;
+
+    if (wallet && ethers.utils.isAddress(wallet)) {
+        const polygonQuery = new Moralis.Query("SlotGameEnteredPolygon");
+        polygonQuery.equalTo("user", wallet.toLowerCase())
+        polygonQuery.greaterThan("createdAt", prevMonday);
+        const polygonCount = await polygonQuery.count();
+        console.log("Slot played by wallet: " + wallet)
+        console.log("   polygon: " + polygonCount);
+
+        const bscQuery = new Moralis.Query("SlotGameEnteredBsc");
+        bscQuery.equalTo("user", req.body.address.toLowerCase())
+        bscQuery.greaterThan("createdAt", prevMonday);
+        const bscCount = await bscQuery.count();
+        console.log("   binance: " + bscCount);
+        console.log("   total: " + (+polygonCount + bscCount));
+
+        return res.json(+polygonCount + bscCount);
+    }
+    return res.status(404).json({status: 'Not Found'});
 });
 
 
